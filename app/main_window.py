@@ -8,6 +8,7 @@ from app.config_manager import ConfigManager
 from app.widgets.snackbar import Snackbar
 from app.widgets.search_panel import SearchPanel
 from app.widgets.volume_meter import VolumeMeterWidget
+from app.widgets.timeline_panel import TimelinePanel
 import os
 
 
@@ -20,8 +21,9 @@ class MainWindow(QMainWindow):
         self._undo_state = None
         self._search_results = []
         self._search_cursor = 0
-        self._current_theme = "dark"   # "dark" | "light"
+        self._current_theme = "dark"
         self._passthrough_dlg = None
+        self._global_crossfade_ms = 300
 
         self._init_ui()
         self._load_config()
@@ -100,6 +102,15 @@ class MainWindow(QMainWindow):
         self.tabs.tabBar().customContextMenuRequested.connect(self._tab_context_menu)
         main_layout.addWidget(self.tabs)
 
+        # ── Timeline Panel ────────────────────────────────────────────────────
+        self.timeline_panel = TimelinePanel()
+        self.timeline_panel.stream_stop_requested.connect(self._on_timeline_stop)
+        self.timeline_panel.fade_all_requested.connect(self._fade_all)
+        self.timeline_panel.stop_all_requested.connect(self._stop_all_immediately)
+        self.timeline_panel.crossfade_changed.connect(self._on_crossfade_changed)
+        self.timeline_panel.set_crossfade_ms(self._global_crossfade_ms)
+        main_layout.addWidget(self.timeline_panel)
+
         # ── Snackbar ─────────────────────────────────────────────────────────
         self.snackbar = Snackbar(central_widget)
         self.snackbar.setFixedWidth(self.width())
@@ -152,12 +163,58 @@ class MainWindow(QMainWindow):
 
         menu.addSeparator()
 
+        # ── Timeline panel toggle ────────────────────────────────────────────
+        self.action_timeline = menu.addAction("⏱  Timeline Panel")
+        self.action_timeline.setCheckable(True)
+        self.action_timeline.setChecked(True)
+        self.action_timeline.triggered.connect(self._toggle_timeline_panel)
+
+        menu.addSeparator()
+
         # ── Theme switcher ────────────────────────────────────────────────────
         self.action_light_mode = menu.addAction("☀  Light Mode")
         self.action_light_mode.setCheckable(True)
         self.action_light_mode.triggered.connect(self._toggle_theme)
 
         self.btn_overflow.setMenu(menu)
+
+    # ── Timeline panel signal handlers ────────────────────────────────────────
+
+    def _on_timeline_stop(self, stream_id: int):
+        """Stop a specific stream from the timeline panel."""
+        from app.audio_engine import audio_engine
+        # Find the button owning this stream
+        for i in range(self.tabs.count()):
+            page = self.tabs.widget(i)
+            for btn in page.get_sound_buttons():
+                if btn.stream_id == stream_id:
+                    btn._stop_sound(triggered_by="timeline")
+                    return
+
+    def _fade_all(self):
+        """Fade out all playing sounds."""
+        from app.audio_engine import audio_engine
+        streams = audio_engine.get_playing_streams()
+        for s in streams:
+            audio_engine.fade_out(s["stream_id"])
+
+    def _stop_all_immediately(self):
+        """Hard-stop all sounds immediately."""
+        from app.audio_engine import audio_engine
+        audio_engine.stop_all()
+        for i in range(self.tabs.count()):
+            page = self.tabs.widget(i)
+            for btn in page.get_sound_buttons():
+                btn.is_playing = False
+                btn.is_paused = False
+                btn.stream_id = None
+                btn._apply_normal_style()
+
+    def _on_crossfade_changed(self, ms: int):
+        self._global_crossfade_ms = ms
+
+    def _toggle_timeline_panel(self, checked: bool):
+        self.timeline_panel.setVisible(checked)
 
     # ── Config ────────────────────────────────────────────────────────────────
 
@@ -171,6 +228,10 @@ class MainWindow(QMainWindow):
         saved_theme = config_data.get("theme", "dark")
         if saved_theme != self._current_theme:
             self._apply_theme(saved_theme)
+
+        # Restore global crossfade
+        self._global_crossfade_ms = config_data.get("global_crossfade_ms", 300)
+        self.timeline_panel.set_crossfade_ms(self._global_crossfade_ms)
 
         for tab_data in config_data["tabs"]:
             page = TabPage(rows=tab_data.get("rows", 5), cols=tab_data.get("cols", 2))
@@ -190,20 +251,27 @@ class MainWindow(QMainWindow):
                         if c.isValid():
                             btn.color = c
                             btn._apply_color(c)
-                    # Restore hotkey
                     hk = btn_data.get("hotkey", "")
                     if hk:
                         btn.hotkey = hk
                         btn._register_hotkey()
                         btn._refresh_tooltip()
-                    # Restore icon
                     icon_p = btn_data.get("icon_path", "")
                     if icon_p and os.path.exists(icon_p):
                         btn.icon_path = icon_p
                         btn._apply_icon()
+                    # Load fade settings
+                    btn.fade_in_duration = btn_data.get("fade_in_duration", 0)
+                    btn.fade_out_duration = btn_data.get("fade_out_duration", 0)
+                    btn.fade_mode = btn_data.get("fade_mode", "auto")
+                    btn.crossfade_duration = btn_data.get("crossfade_duration", 0)
 
     def _save_config(self):
-        data = {"tabs": [], "theme": self._current_theme}
+        data = {
+            "tabs": [],
+            "theme": self._current_theme,
+            "global_crossfade_ms": self._global_crossfade_ms,
+        }
         for i in range(self.tabs.count()):
             page = self.tabs.widget(i)
             tab_data = {
@@ -222,6 +290,10 @@ class MainWindow(QMainWindow):
                     "color": btn.color.name() if btn.color else None,
                     "hotkey": btn.hotkey,
                     "icon_path": btn.icon_path,
+                    "fade_in_duration": btn.fade_in_duration,
+                    "fade_out_duration": btn.fade_out_duration,
+                    "fade_mode": btn.fade_mode,
+                    "crossfade_duration": btn.crossfade_duration,
                 })
             data["tabs"].append(tab_data)
         self.config_manager.save(data)
@@ -234,7 +306,26 @@ class MainWindow(QMainWindow):
 
     def silence_clicked(self):
         from app.audio_engine import audio_engine
-        audio_engine.stop_all()
+        streams = audio_engine.get_playing_streams()
+        if streams:
+            # Fade out all, then hard-stop after a delay
+            for s in streams:
+                audio_engine.fade_out(s["stream_id"])
+            # Schedule a hard-stop check in 3 seconds
+            QTimer.singleShot(3000, self._check_fade_complete)
+        else:
+            self._reset_all_buttons()
+
+    def _check_fade_complete(self):
+        """Hard-stop any streams that are still active after fade timeout."""
+        from app.audio_engine import audio_engine
+        streams = audio_engine.get_playing_streams()
+        if streams:
+            audio_engine.stop_all()
+            self._reset_all_buttons()
+
+    def _reset_all_buttons(self):
+        """Reset all button states after all sounds stop."""
         for i in range(self.tabs.count()):
             page = self.tabs.widget(i)
             for btn in page.get_sound_buttons():
@@ -295,6 +386,10 @@ class MainWindow(QMainWindow):
                 "color": btn.color.name() if btn.color else None,
                 "hotkey": btn.hotkey,
                 "icon_path": btn.icon_path,
+                "fade_in_duration": btn.fade_in_duration,
+                "fade_out_duration": btn.fade_out_duration,
+                "fade_mode": btn.fade_mode,
+                "crossfade_duration": btn.crossfade_duration,
             })
         return {
             "title": self.tabs.tabText(idx),
@@ -331,6 +426,10 @@ class MainWindow(QMainWindow):
                 if icon_p and os.path.exists(icon_p):
                     btn.icon_path = icon_p
                     btn._apply_icon()
+                btn.fade_in_duration = btn_data.get("fade_in_duration", 0)
+                btn.fade_out_duration = btn_data.get("fade_out_duration", 0)
+                btn.fade_mode = btn_data.get("fade_mode", "auto")
+                btn.crossfade_duration = btn_data.get("crossfade_duration", 0)
         self.tabs.setCurrentIndex(insert_at)
 
     def _change_grid(self):
@@ -383,7 +482,11 @@ class MainWindow(QMainWindow):
 
     def _collect_config_dict(self) -> dict:
         """Build the same dict _save_config uses, without writing to disk."""
-        data = {"tabs": [], "theme": self._current_theme}
+        data = {
+            "tabs": [],
+            "theme": self._current_theme,
+            "global_crossfade_ms": self._global_crossfade_ms,
+        }
         for i in range(self.tabs.count()):
             page = self.tabs.widget(i)
             tab_data = {
@@ -402,17 +505,19 @@ class MainWindow(QMainWindow):
                     "color": btn.color.name() if btn.color else None,
                     "hotkey": btn.hotkey,
                     "icon_path": btn.icon_path,
+                    "fade_in_duration": btn.fade_in_duration,
+                    "fade_out_duration": btn.fade_out_duration,
+                    "fade_mode": btn.fade_mode,
+                    "crossfade_duration": btn.crossfade_duration,
                 })
             data["tabs"].append(tab_data)
         return data
 
     def _apply_imported_config(self, config: dict):
         """Replace current board with imported config (same logic as _load_config)."""
-        # Stop all sounds and clear tabs
         self.silence_clicked()
         while self.tabs.count() > 0:
             self.tabs.removeTab(0)
-        # Reload
         for tab_data in config.get("tabs", []):
             page = TabPage(rows=tab_data.get("rows", 5), cols=tab_data.get("cols", 2))
             self.tabs.addTab(page, tab_data.get("title", "Page"))
@@ -440,6 +545,12 @@ class MainWindow(QMainWindow):
                     if icon_p and os.path.exists(icon_p):
                         btn.icon_path = icon_p
                         btn._apply_icon()
+                    btn.fade_in_duration = btn_data.get("fade_in_duration", 0)
+                    btn.fade_out_duration = btn_data.get("fade_out_duration", 0)
+                    btn.fade_mode = btn_data.get("fade_mode", "auto")
+                    btn.crossfade_duration = btn_data.get("crossfade_duration", 0)
+        self._global_crossfade_ms = config.get("global_crossfade_ms", 300)
+        self.timeline_panel.set_crossfade_ms(self._global_crossfade_ms)
         self._save_config()
 
     # ── Passthrough ───────────────────────────────────────────────────────────
@@ -468,7 +579,6 @@ class MainWindow(QMainWindow):
             with open(theme_file, "r", encoding="utf-8") as f:
                 self.parent().setStyleSheet(f.read()) if self.parent() else \
                     self.setStyleSheet(f.read())
-            # Also apply to QApplication so all dialogs update
             from PyQt6.QtWidgets import QApplication
             QApplication.instance().setStyleSheet(
                 open(theme_file, "r", encoding="utf-8").read()
@@ -485,7 +595,7 @@ class MainWindow(QMainWindow):
             "Built with PyQt6 + sounddevice."
         )
 
-    # ── Search ────────────────────────────────────────────────────────────────
+    # ── Search ───────────────────────────────────────────────────────────────
 
     def _open_search(self):
         self.search_panel.open_panel()
@@ -549,7 +659,7 @@ class MainWindow(QMainWindow):
             for btn in page.get_sound_buttons():
                 btn.set_search_highlight(False)
 
-    # ── Key Events ────────────────────────────────────────────────────────────
+    # ── Key Events ───────────────────────────────────────────────────────────
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:

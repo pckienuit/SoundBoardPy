@@ -36,7 +36,6 @@ QPushButton#SoundButton {
     font-size: 15px;
     padding: 6px;
     color: #1A1A1A;
-    qproperty-wordWrap: true;
 }
 
 QPushButton#SoundButton:hover {
@@ -153,4 +152,135 @@ QComboBox QAbstractItemView {
     border: 1px solid #CCCCCC;
     selection-background-color: #0095CC;
     selection-color: #FFF;
+}
+
+/* ─── Timeline Panel ─────────────────────────────────── */
+
+QWidget#TimelinePanel {
+    background-color: #E8E8E8;
+    border-top: 1px solid #CCCCCC;
+}
+
+QWidget#TimelineHeader {
+    background-color: #F0F0F0;
+    border-bottom: 1px solid #CCCCCC;
+}
+
+QPushButton#TimelineToggle {
+    background: transparent;
+    color: #666666;
+    border: none;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: bold;
+}
+QPushButton#TimelineToggle:hover {
+    color: #1A1A1A;
+    background: #D8D8D8;
+}
+
+QWidget#TimelineBody {
+    background-color: #E8E8E8;
+}
+
+QWidget#SoundStrip {
+    background-color: #F8F8F8;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+}
+QWidget#SoundStrip:hover {
+    border: 1px solid #0095CC;
+}
+
+QLabel#StripName {
+    color: #333333;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+QLabel#StripVol {
+    color: #0095CC;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+QLabel#CrossfadeVal {
+    color: #0095CC;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+QPushButton#FadeAllBtn {
+    background: #E0F0E0;
+    color: #228822;
+    border: 1px solid #AACFAA;
+    border-radius: 3px;
+    padding: 2px 10px;
+    font-size: 11px;
+}
+QPushButton#FadeAllBtn:hover {
+    background: #CCEECC;
+}
+
+QPushButton#StopAllBtn {
+    background: #F0E0E0;
+    color: #CC2222;
+    border: 1px solid #DFAAAA;
+    border-radius: 3px;
+    padding: 2px 10px;
+    font-size: 11px;
+}
+QPushButton#StopAllBtn:hover {
+    background: #FFDDDD;
+}
+
+QPushButton#StripStop {
+    background: #E8E8E8;
+    color: #CC2222;
+    border: 1px solid #CCCCCC;
+    border-radius: 3px;
+    font-size: 10px;
+    padding: 0px;
+}
+QPushButton#StripStop:hover {
+    background: #DDDDDD;
+    color: #AA0000;
+}
+
+/* Scroll area inside timeline */
+QScrollArea#TimelineScroll {
+    background: transparent;
+    border: none;
+}
+QScrollArea#TimelineScroll > QWidget {
+    background: transparent;
+}
+
+/* Progress bar in timeline */
+QProgressBar {
+    border: none;
+    background: #D8D8D8;
+    border-radius: 3px;
+    height: 8px;
+}
+QProgressBar::chunk {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 #0095CC, stop:0.6 #00AA66, stop:0.85 #CCCC00, stop:1 #CC2200);
+    border-radius: 3px;
+}
+
+/* Group boxes in dialog */
+QGroupBox {
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    margin-top: 8px;
+    padding-top: 8px;
+    font-size: 12px;
+    color: #666666;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 4px;
+    color: #0095CC;
 }
