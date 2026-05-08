@@ -1,12 +1,14 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QTabWidget, QPushButton, QInputDialog, QMessageBox,
-                             QMenu)
+                             QMenu, QLabel)
 from PyQt6.QtGui import QActionGroup, QShortcut, QKeySequence
 from PyQt6.QtCore import Qt, QTimer
 from app.tab_page import TabPage
 from app.config_manager import ConfigManager
 from app.widgets.snackbar import Snackbar
 from app.widgets.search_panel import SearchPanel
+from app.widgets.volume_meter import VolumeMeterWidget
+import os
 
 
 class MainWindow(QMainWindow):
@@ -16,8 +18,10 @@ class MainWindow(QMainWindow):
         self.resize(736, 664)
         self.config_manager = ConfigManager("soundboard_config.json")
         self._undo_state = None
-        self._search_results = []   # List of (tab_idx, btn) matching current query
-        self._search_cursor = 0     # Index into _search_results
+        self._search_results = []
+        self._search_cursor = 0
+        self._current_theme = "dark"   # "dark" | "light"
+        self._passthrough_dlg = None
 
         self._init_ui()
         self._load_config()
@@ -66,6 +70,10 @@ class MainWindow(QMainWindow):
             btn.setStyleSheet(btn_style)
             toolbar_layout.addWidget(btn)
 
+        # Volume meter (right of toolbar)
+        self.volume_meter = VolumeMeterWidget()
+        toolbar_layout.addWidget(self.volume_meter)
+
         self.btn_silence.setToolTip("Stop all sounds (Esc)")
         self.btn_search.setToolTip("Search sounds (Ctrl+F)")
         self._build_overflow_menu()
@@ -110,9 +118,19 @@ class MainWindow(QMainWindow):
         from app.audio_engine import audio_engine
         menu = QMenu(self)
 
-        # ── Grid config for current tab ───────────────────────────────────────
+        # ── Grid config ──────────────────────────────────────────────────────
         action_grid = menu.addAction("Change Button Grid…")
         action_grid.triggered.connect(self._change_grid)
+
+        menu.addSeparator()
+
+        # ── Import / Export ───────────────────────────────────────────────────
+        action_import_export = menu.addAction("📦  Import / Export…")
+        action_import_export.triggered.connect(self._open_import_export)
+
+        # ── Audio Passthrough ─────────────────────────────────────────────────
+        action_passthrough = menu.addAction("🎙  Audio Passthrough…")
+        action_passthrough.triggered.connect(self._open_passthrough)
 
         menu.addSeparator()
 
@@ -132,6 +150,13 @@ class MainWindow(QMainWindow):
                     action.setChecked(True)
                 action.triggered.connect(self._on_device_selected)
 
+        menu.addSeparator()
+
+        # ── Theme switcher ────────────────────────────────────────────────────
+        self.action_light_mode = menu.addAction("☀  Light Mode")
+        self.action_light_mode.setCheckable(True)
+        self.action_light_mode.triggered.connect(self._toggle_theme)
+
         self.btn_overflow.setMenu(menu)
 
     # ── Config ────────────────────────────────────────────────────────────────
@@ -141,6 +166,11 @@ class MainWindow(QMainWindow):
         if not config_data or "tabs" not in config_data:
             self._add_new_page("Page 1")
             return
+
+        # Restore theme preference
+        saved_theme = config_data.get("theme", "dark")
+        if saved_theme != self._current_theme:
+            self._apply_theme(saved_theme)
 
         for tab_data in config_data["tabs"]:
             page = TabPage(rows=tab_data.get("rows", 5), cols=tab_data.get("cols", 2))
@@ -160,15 +190,20 @@ class MainWindow(QMainWindow):
                         if c.isValid():
                             btn.color = c
                             btn._apply_color(c)
-                    # Restore and re-register hotkey
+                    # Restore hotkey
                     hk = btn_data.get("hotkey", "")
                     if hk:
                         btn.hotkey = hk
                         btn._register_hotkey()
                         btn._refresh_tooltip()
+                    # Restore icon
+                    icon_p = btn_data.get("icon_path", "")
+                    if icon_p and os.path.exists(icon_p):
+                        btn.icon_path = icon_p
+                        btn._apply_icon()
 
     def _save_config(self):
-        data = {"tabs": []}
+        data = {"tabs": [], "theme": self._current_theme}
         for i in range(self.tabs.count()):
             page = self.tabs.widget(i)
             tab_data = {
@@ -186,6 +221,7 @@ class MainWindow(QMainWindow):
                     "stop_all_sounds": btn.stop_all_sounds,
                     "color": btn.color.name() if btn.color else None,
                     "hotkey": btn.hotkey,
+                    "icon_path": btn.icon_path,
                 })
             data["tabs"].append(tab_data)
         self.config_manager.save(data)
@@ -258,6 +294,7 @@ class MainWindow(QMainWindow):
                 "stop_all_sounds": btn.stop_all_sounds,
                 "color": btn.color.name() if btn.color else None,
                 "hotkey": btn.hotkey,
+                "icon_path": btn.icon_path,
             })
         return {
             "title": self.tabs.tabText(idx),
@@ -290,6 +327,10 @@ class MainWindow(QMainWindow):
                     btn.hotkey = hk
                     btn._register_hotkey()
                     btn._refresh_tooltip()
+                icon_p = btn_data.get("icon_path", "")
+                if icon_p and os.path.exists(icon_p):
+                    btn.icon_path = icon_p
+                    btn._apply_icon()
         self.tabs.setCurrentIndex(insert_at)
 
     def _change_grid(self):
@@ -328,6 +369,114 @@ class MainWindow(QMainWindow):
         if action:
             from app.audio_engine import audio_engine
             audio_engine.set_output_device(action.data())
+
+    # ── Import / Export ───────────────────────────────────────────────────────
+
+    def _open_import_export(self):
+        from app.dialogs.import_export_dialog import ImportExportDialog
+        dlg = ImportExportDialog(
+            get_config_fn=self._collect_config_dict,
+            apply_config_fn=self._apply_imported_config,
+            parent=self
+        )
+        dlg.exec()
+
+    def _collect_config_dict(self) -> dict:
+        """Build the same dict _save_config uses, without writing to disk."""
+        data = {"tabs": [], "theme": self._current_theme}
+        for i in range(self.tabs.count()):
+            page = self.tabs.widget(i)
+            tab_data = {
+                "title": self.tabs.tabText(i),
+                "rows": page.rows,
+                "cols": page.cols,
+                "buttons": [],
+            }
+            for btn in page.get_sound_buttons():
+                tab_data["buttons"].append({
+                    "sound_name": btn.sound_name,
+                    "sound_path": btn.sound_path,
+                    "loop": btn.loop,
+                    "volume_offset": btn.volume_offset,
+                    "stop_all_sounds": btn.stop_all_sounds,
+                    "color": btn.color.name() if btn.color else None,
+                    "hotkey": btn.hotkey,
+                    "icon_path": btn.icon_path,
+                })
+            data["tabs"].append(tab_data)
+        return data
+
+    def _apply_imported_config(self, config: dict):
+        """Replace current board with imported config (same logic as _load_config)."""
+        # Stop all sounds and clear tabs
+        self.silence_clicked()
+        while self.tabs.count() > 0:
+            self.tabs.removeTab(0)
+        # Reload
+        for tab_data in config.get("tabs", []):
+            page = TabPage(rows=tab_data.get("rows", 5), cols=tab_data.get("cols", 2))
+            self.tabs.addTab(page, tab_data.get("title", "Page"))
+            buttons = page.get_sound_buttons()
+            for idx, btn_data in enumerate(tab_data.get("buttons", [])):
+                if idx < len(buttons) and btn_data.get("sound_path"):
+                    btn = buttons[idx]
+                    btn.set_sound(btn_data["sound_path"], btn_data.get("sound_name"))
+                    btn.loop = btn_data.get("loop", False)
+                    btn.volume_offset = btn_data.get("volume_offset", 0)
+                    btn.stop_all_sounds = btn_data.get("stop_all_sounds", False)
+                    color_str = btn_data.get("color")
+                    if color_str:
+                        from PyQt6.QtGui import QColor
+                        c = QColor(color_str)
+                        if c.isValid():
+                            btn.color = c
+                            btn._apply_color(c)
+                    hk = btn_data.get("hotkey", "")
+                    if hk:
+                        btn.hotkey = hk
+                        btn._register_hotkey()
+                        btn._refresh_tooltip()
+                    icon_p = btn_data.get("icon_path", "")
+                    if icon_p and os.path.exists(icon_p):
+                        btn.icon_path = icon_p
+                        btn._apply_icon()
+        self._save_config()
+
+    # ── Passthrough ───────────────────────────────────────────────────────────
+
+    def _open_passthrough(self):
+        from app.dialogs.passthrough_dialog import PassthroughDialog
+        if self._passthrough_dlg is None or not self._passthrough_dlg.isVisible():
+            self._passthrough_dlg = PassthroughDialog(parent=self)
+            self._passthrough_dlg.show()
+        else:
+            self._passthrough_dlg.raise_()
+            self._passthrough_dlg.activateWindow()
+
+    # ── Theme ─────────────────────────────────────────────────────────────────
+
+    def _toggle_theme(self, checked: bool):
+        self._apply_theme("light" if checked else "dark")
+
+    def _apply_theme(self, theme: str):
+        self._current_theme = theme
+        theme_file = os.path.join(
+            os.path.dirname(__file__), "styles",
+            "light_theme.qss" if theme == "light" else "dark_theme.qss"
+        )
+        try:
+            with open(theme_file, "r", encoding="utf-8") as f:
+                self.parent().setStyleSheet(f.read()) if self.parent() else \
+                    self.setStyleSheet(f.read())
+            # Also apply to QApplication so all dialogs update
+            from PyQt6.QtWidgets import QApplication
+            QApplication.instance().setStyleSheet(
+                open(theme_file, "r", encoding="utf-8").read()
+            )
+        except Exception as e:
+            print(f"Theme load error: {e}")
+        if hasattr(self, "action_light_mode"):
+            self.action_light_mode.setChecked(theme == "light")
 
     def _show_about(self):
         QMessageBox.about(

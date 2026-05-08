@@ -4,3 +4,4 @@ __pycache__
 debug*
 /venv
 *.pyc
+*.bak

@@ -158,3 +158,21 @@ QDialogButtonBox QPushButton {
 }
 QDialogButtonBox QPushButton:hover { background: #555; }
 QDialogButtonBox QPushButton:pressed { background: #00AEEF; color: #000; }
+
+/* ComboBox */
+QComboBox {
+    background: #333333;
+    border: 1px solid #555555;
+    border-radius: 3px;
+    padding: 4px 8px;
+    color: #FFFFFF;
+}
+QComboBox:focus { border: 1px solid #00AEEF; }
+QComboBox::drop-down { border: none; }
+QComboBox QAbstractItemView {
+    background: #2B2B2B;
+    border: 1px solid #111;
+    selection-background-color: #00AEEF;
+    selection-color: #000;
+    color: #FFF;
+}

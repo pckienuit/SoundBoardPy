@@ -1,8 +1,8 @@
 from PyQt6.QtWidgets import (QPushButton, QMenu, QFileDialog, QInputDialog,
                              QColorDialog, QDialog, QVBoxLayout, QHBoxLayout,
                              QLabel, QSlider, QDialogButtonBox)
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QColor, QIcon
 import os
 from app.audio_engine import audio_engine
 
@@ -62,6 +62,7 @@ class SoundButton(QPushButton):
         # State
         self.sound_name = ""
         self.sound_path = ""
+        self.icon_path = ""        # optional image path
         self.color = None          # QColor or None
         self.volume_offset = 0
         self.loop = False
@@ -121,6 +122,7 @@ class SoundButton(QPushButton):
         self._unregister_hotkey()
         self.sound_name = ""
         self.sound_path = ""
+        self.icon_path = ""
         self.color = None
         self.volume_offset = 0
         self.loop = False
@@ -128,6 +130,8 @@ class SoundButton(QPushButton):
         self.next_sound = ""
         self.hotkey = ""
         self.setText(" ")
+        self.setIcon(QIcon())
+        self.setIconSize(QSize(0, 0))
         self._apply_normal_style()
 
     # -------------------------------------------------------------------------
@@ -151,6 +155,12 @@ class SoundButton(QPushButton):
         action_stop_all.setCheckable(True)
         action_stop_all.setChecked(self.stop_all_sounds)
 
+        menu.addSeparator()
+        action_icon = menu.addAction("Set Icon…")
+        if self.icon_path:
+            action_clear_icon = menu.addAction("Clear Icon")
+        else:
+            action_clear_icon = None
         menu.addSeparator()
         hotkey_label = f"Set Hotkey  [{self.hotkey}]" if self.hotkey else "Set Hotkey…"
         action_hotkey = menu.addAction(hotkey_label)
@@ -193,11 +203,45 @@ class SoundButton(QPushButton):
         elif action == action_stop_all:
             self.stop_all_sounds = not self.stop_all_sounds
 
+        elif action == action_icon:
+            self._pick_icon()
+
+        elif action_clear_icon and action == action_clear_icon:
+            self._clear_icon()
+
         elif action == action_hotkey:
             self._pick_hotkey()
 
         elif action == action_clear:
             self.clear_button()
+
+    # -------------------------------------------------------------------------
+    # Icon
+    # -------------------------------------------------------------------------
+
+    def _pick_icon(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Icon Image", "",
+            "Images (*.png *.jpg *.jpeg *.bmp *.svg *.ico);;All Files (*.*)"
+        )
+        if path:
+            self.icon_path = path
+            self._apply_icon()
+
+    def _clear_icon(self):
+        self.icon_path = ""
+        self.setIcon(QIcon())
+        self.setIconSize(QSize(0, 0))
+        self.setToolButtonStyle if False else None  # no-op
+        self.setText(self.sound_name if self.sound_name else " ")
+
+    def _apply_icon(self):
+        if self.icon_path and os.path.exists(self.icon_path):
+            icon = QIcon(self.icon_path)
+            self.setIcon(icon)
+            btn_h = self.height() or 60
+            icon_sz = max(24, min(btn_h - 20, 40))
+            self.setIconSize(QSize(icon_sz, icon_sz))
 
     # -------------------------------------------------------------------------
     # Hotkey
@@ -310,6 +354,8 @@ class SoundButton(QPushButton):
         self.sound_name = name if name else os.path.splitext(os.path.basename(path))[0]
         self.setText(self.sound_name)
         self._refresh_tooltip()
+        if self.icon_path:
+            self._apply_icon()
 
     def _apply_color(self, color: QColor):
         r, g, b = color.red(), color.green(), color.blue()

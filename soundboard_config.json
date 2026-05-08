@@ -6,12 +6,24 @@
             "cols": 1,
             "buttons": [
                 {
-                    "sound_name": "",
-                    "sound_path": "",
+                    "sound_name": "1.a Sia - Unstoppable (Official Video - Live from the Nostalgic For The Present Tour)",
+                    "sound_path": "C:/Users/phanc/Downloads/Nh\u1ea1c WDA 2026-20260508T011057Z-3-001/Nh\u1ea1c WDA 2026/1A/1.a Sia - Unstoppable (Official Video - Live from the Nostalgic For The Present Tour).mp3",
                     "loop": false,
                     "volume_offset": 0,
                     "stop_all_sounds": false,
-                    "color": null
+                    "color": "#3b0001",
+                    "hotkey": "",
+                    "icon_path": ""
+                },
+                {
+                    "sound_name": "1.a yung kai - blue (Lyrics)",
+                    "sound_path": "C:/Users/phanc/Downloads/Nh\u1ea1c WDA 2026-20260508T011057Z-3-001/Nh\u1ea1c WDA 2026/1A/1.a yung kai - blue (Lyrics).mp3",
+                    "loop": false,
+                    "volume_offset": 0,
+                    "stop_all_sounds": true,
+                    "color": "#006094",
+                    "hotkey": "",
+                    "icon_path": ""
                 },
                 {
                     "sound_name": "",
@@ -19,7 +31,9 @@
                     "loop": false,
                     "volume_offset": 0,
                     "stop_all_sounds": false,
-                    "color": null
+                    "color": null,
+                    "hotkey": "",
+                    "icon_path": ""
                 },
                 {
                     "sound_name": "",
@@ -27,7 +41,9 @@
                     "loop": false,
                     "volume_offset": 0,
                     "stop_all_sounds": false,
-                    "color": null
+                    "color": null,
+                    "hotkey": "",
+                    "icon_path": ""
                 },
                 {
                     "sound_name": "",
@@ -35,17 +51,12 @@
                     "loop": false,
                     "volume_offset": 0,
                     "stop_all_sounds": false,
-                    "color": null
-                },
-                {
-                    "sound_name": "",
-                    "sound_path": "",
-                    "loop": false,
-                    "volume_offset": 0,
-                    "stop_all_sounds": false,
-                    "color": null
+                    "color": null,
+                    "hotkey": "",
+                    "icon_path": ""
                 }
             ]
         }
-    ]
+    ],
+    "theme": "dark"
 }
