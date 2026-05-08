@@ -67,11 +67,15 @@ class SoundButton(QPushButton):
         self.loop = False
         self.stop_all_sounds = False
         self.next_sound = ""
+        self.hotkey = ""           # e.g. "ctrl+alt+a"
 
         self.is_selected = False
         self.stream_id = None
         self.is_playing = False
         self.is_paused = False
+
+        # Search highlight state
+        self._search_highlighted = False
 
         self.clicked.connect(self.on_click)
 
@@ -114,6 +118,7 @@ class SoundButton(QPushButton):
 
     def clear_button(self):
         self.stop()
+        self._unregister_hotkey()
         self.sound_name = ""
         self.sound_path = ""
         self.color = None
@@ -121,6 +126,7 @@ class SoundButton(QPushButton):
         self.loop = False
         self.stop_all_sounds = False
         self.next_sound = ""
+        self.hotkey = ""
         self.setText(" ")
         self._apply_normal_style()
 
@@ -145,6 +151,9 @@ class SoundButton(QPushButton):
         action_stop_all.setCheckable(True)
         action_stop_all.setChecked(self.stop_all_sounds)
 
+        menu.addSeparator()
+        hotkey_label = f"Set Hotkey  [{self.hotkey}]" if self.hotkey else "Set Hotkey…"
+        action_hotkey = menu.addAction(hotkey_label)
         menu.addSeparator()
         action_clear = menu.addAction("Clear Button")
 
@@ -184,8 +193,92 @@ class SoundButton(QPushButton):
         elif action == action_stop_all:
             self.stop_all_sounds = not self.stop_all_sounds
 
+        elif action == action_hotkey:
+            self._pick_hotkey()
+
         elif action == action_clear:
             self.clear_button()
+
+    # -------------------------------------------------------------------------
+    # Hotkey
+    # -------------------------------------------------------------------------
+
+    def _pick_hotkey(self):
+        from app.dialogs.hotkey_dialog import HotkeyPickerDialog
+        from app.hotkey_manager import hotkey_manager
+
+        # Collect all hotkeys already registered (excluding self)
+        existing = self._collect_existing_hotkeys()
+
+        dlg = HotkeyPickerDialog(
+            current_hotkey=self.hotkey,
+            existing_hotkeys=existing,
+            parent=self
+        )
+        if dlg.exec():
+            new_hk = dlg.hotkey
+            # Unregister old hotkey first
+            self._unregister_hotkey()
+            self.hotkey = new_hk
+            if new_hk:
+                self._register_hotkey()
+            self._refresh_tooltip()
+
+    def _collect_existing_hotkeys(self):
+        """Scan all SoundButtons in all tabs for registered hotkeys."""
+        existing = []
+        try:
+            main_win = self.window()
+            if hasattr(main_win, 'tabs'):
+                for i in range(main_win.tabs.count()):
+                    page = main_win.tabs.widget(i)
+                    if hasattr(page, 'get_sound_buttons'):
+                        for btn in page.get_sound_buttons():
+                            if btn is not self and btn.hotkey:
+                                existing.append(btn.hotkey)
+        except Exception:
+            pass
+        return existing
+
+    def _register_hotkey(self):
+        if not self.hotkey:
+            return
+        from app.hotkey_manager import hotkey_manager
+        hotkey_manager.register(self.hotkey, self.on_click)
+
+    def _unregister_hotkey(self):
+        if not self.hotkey:
+            return
+        from app.hotkey_manager import hotkey_manager
+        hotkey_manager.unregister(self.hotkey)
+
+    def _refresh_tooltip(self):
+        if self.hotkey:
+            display = "  +  ".join(p.capitalize() for p in self.hotkey.split("+"))
+            self.setToolTip(f"{self.sound_name}\nHotkey: {display}")
+        else:
+            self.setToolTip(self.sound_name)
+
+    # -------------------------------------------------------------------------
+    # Search Highlight
+    # -------------------------------------------------------------------------
+
+    def set_search_highlight(self, active: bool):
+        """Highlight or un-highlight this button for search results."""
+        if self._search_highlighted == active:
+            return
+        self._search_highlighted = active
+        if active:
+            base = (
+                f"background-color: rgb({self.color.red()},{self.color.green()},{self.color.blue()});"
+                if self.color else ""
+            )
+            self.setStyleSheet(
+                f"QPushButton#SoundButton {{ {base} border: 2px solid #FFD700; "
+                f"background-color: {'rgb(' + str(self.color.red()) + ',' + str(self.color.green()) + ',' + str(self.color.blue()) + ')' if self.color else '#4A4200'}; }}"
+            )
+        else:
+            self._apply_normal_style()
 
     # -------------------------------------------------------------------------
     # Drag & Drop
@@ -216,6 +309,7 @@ class SoundButton(QPushButton):
         self.sound_path = path
         self.sound_name = name if name else os.path.splitext(os.path.basename(path))[0]
         self.setText(self.sound_name)
+        self._refresh_tooltip()
 
     def _apply_color(self, color: QColor):
         r, g, b = color.red(), color.green(), color.blue()

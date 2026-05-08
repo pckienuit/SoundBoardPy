@@ -1,11 +1,12 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QTabWidget, QPushButton, QInputDialog, QMessageBox,
                              QMenu)
-from PyQt6.QtGui import QActionGroup
+from PyQt6.QtGui import QActionGroup, QShortcut, QKeySequence
 from PyQt6.QtCore import Qt, QTimer
 from app.tab_page import TabPage
 from app.config_manager import ConfigManager
 from app.widgets.snackbar import Snackbar
+from app.widgets.search_panel import SearchPanel
 
 
 class MainWindow(QMainWindow):
@@ -15,6 +16,8 @@ class MainWindow(QMainWindow):
         self.resize(736, 664)
         self.config_manager = ConfigManager("soundboard_config.json")
         self._undo_state = None
+        self._search_results = []   # List of (tab_idx, btn) matching current query
+        self._search_cursor = 0     # Index into _search_results
 
         self._init_ui()
         self._load_config()
@@ -55,14 +58,16 @@ class MainWindow(QMainWindow):
         self.btn_remove_page = QPushButton("remove page")
         self.btn_add_page = QPushButton("add page")
         self.btn_about = QPushButton("about")
+        self.btn_search = QPushButton("🔍 search")
         self.btn_overflow = QPushButton("•••")
 
         for btn in [self.btn_silence, self.btn_rename_page, self.btn_remove_page,
-                    self.btn_add_page, self.btn_about, self.btn_overflow]:
+                    self.btn_add_page, self.btn_about, self.btn_search, self.btn_overflow]:
             btn.setStyleSheet(btn_style)
             toolbar_layout.addWidget(btn)
 
         self.btn_silence.setToolTip("Stop all sounds (Esc)")
+        self.btn_search.setToolTip("Search sounds (Ctrl+F)")
         self._build_overflow_menu()
 
         self.btn_silence.clicked.connect(self.silence_clicked)
@@ -70,8 +75,15 @@ class MainWindow(QMainWindow):
         self.btn_rename_page.clicked.connect(self.rename_page_clicked)
         self.btn_remove_page.clicked.connect(self.remove_page_clicked)
         self.btn_about.clicked.connect(self._show_about)
+        self.btn_search.clicked.connect(self._open_search)
 
         main_layout.addWidget(toolbar)
+
+        # ── Search Panel ──────────────────────────────────────────────────────
+        self.search_panel = SearchPanel()
+        self.search_panel.search_changed.connect(self._on_search_changed)
+        self.search_panel.closed.connect(self._on_search_closed)
+        main_layout.addWidget(self.search_panel)
 
         # ── Tabs ─────────────────────────────────────────────────────────────
         self.tabs = QTabWidget()
@@ -84,6 +96,10 @@ class MainWindow(QMainWindow):
         self.snackbar = Snackbar(central_widget)
         self.snackbar.setFixedWidth(self.width())
         main_layout.addWidget(self.snackbar)
+
+        # ── Shortcuts ─────────────────────────────────────────────────────────
+        sc_search = QShortcut(QKeySequence("Ctrl+F"), self)
+        sc_search.activated.connect(self._open_search)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -144,6 +160,12 @@ class MainWindow(QMainWindow):
                         if c.isValid():
                             btn.color = c
                             btn._apply_color(c)
+                    # Restore and re-register hotkey
+                    hk = btn_data.get("hotkey", "")
+                    if hk:
+                        btn.hotkey = hk
+                        btn._register_hotkey()
+                        btn._refresh_tooltip()
 
     def _save_config(self):
         data = {"tabs": []}
@@ -163,6 +185,7 @@ class MainWindow(QMainWindow):
                     "volume_offset": btn.volume_offset,
                     "stop_all_sounds": btn.stop_all_sounds,
                     "color": btn.color.name() if btn.color else None,
+                    "hotkey": btn.hotkey,
                 })
             data["tabs"].append(tab_data)
         self.config_manager.save(data)
@@ -234,6 +257,7 @@ class MainWindow(QMainWindow):
                 "volume_offset": btn.volume_offset,
                 "stop_all_sounds": btn.stop_all_sounds,
                 "color": btn.color.name() if btn.color else None,
+                "hotkey": btn.hotkey,
             })
         return {
             "title": self.tabs.tabText(idx),
@@ -261,6 +285,11 @@ class MainWindow(QMainWindow):
                     if c.isValid():
                         btn.color = c
                         btn._apply_color(c)
+                hk = btn_data.get("hotkey", "")
+                if hk:
+                    btn.hotkey = hk
+                    btn._register_hotkey()
+                    btn._refresh_tooltip()
         self.tabs.setCurrentIndex(insert_at)
 
     def _change_grid(self):
@@ -307,7 +336,76 @@ class MainWindow(QMainWindow):
             "Built with PyQt6 + sounddevice."
         )
 
+    # ── Search ────────────────────────────────────────────────────────────────
+
+    def _open_search(self):
+        self.search_panel.open_panel()
+
+    def _on_search_closed(self):
+        self._clear_all_highlights()
+        self._search_results = []
+        self._search_cursor = 0
+
+    def _on_search_changed(self, query: str):
+        # Navigation signals from prev/next buttons
+        if query.startswith("__nav_next__"):
+            real_query = query[len("__nav_next__"):]
+            if self._search_results:
+                self._search_cursor = (self._search_cursor + 1) % len(self._search_results)
+                self._jump_to_cursor()
+            return
+        if query.startswith("__nav_prev__"):
+            real_query = query[len("__nav_prev__"):]
+            if self._search_results:
+                self._search_cursor = (self._search_cursor - 1) % len(self._search_results)
+                self._jump_to_cursor()
+            return
+
+        self._clear_all_highlights()
+        self._search_results = []
+        self._search_cursor = 0
+
+        if not query:
+            self.search_panel.clear_result_info()
+            return
+
+        q = query.lower()
+        for tab_idx in range(self.tabs.count()):
+            page = self.tabs.widget(tab_idx)
+            for btn in page.get_sound_buttons():
+                if btn.sound_name and q in btn.sound_name.lower():
+                    self._search_results.append((tab_idx, btn))
+
+        for _, btn in self._search_results:
+            btn.set_search_highlight(True)
+
+        total = len(self._search_results)
+        self.search_panel.set_result_info(total, self._search_cursor + 1 if total else 0)
+
+        if self._search_results:
+            self._jump_to_cursor()
+
+    def _jump_to_cursor(self):
+        if not self._search_results:
+            return
+        tab_idx, btn = self._search_results[self._search_cursor]
+        self.tabs.setCurrentIndex(tab_idx)
+        btn.setFocus()
+        total = len(self._search_results)
+        self.search_panel.set_result_info(total, self._search_cursor + 1)
+
+    def _clear_all_highlights(self):
+        for i in range(self.tabs.count()):
+            page = self.tabs.widget(i)
+            for btn in page.get_sound_buttons():
+                btn.set_search_highlight(False)
+
+    # ── Key Events ────────────────────────────────────────────────────────────
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
-            self.silence_clicked()
+            if self.search_panel.isVisible():
+                self.search_panel.close_panel()
+            else:
+                self.silence_clicked()
         super().keyPressEvent(event)
