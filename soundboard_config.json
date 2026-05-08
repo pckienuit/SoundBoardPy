@@ -1,0 +1,51 @@
+{
+    "tabs": [
+        {
+            "title": "Page 1",
+            "rows": 5,
+            "cols": 1,
+            "buttons": [
+                {
+                    "sound_name": "",
+                    "sound_path": "",
+                    "loop": false,
+                    "volume_offset": 0,
+                    "stop_all_sounds": false,
+                    "color": null
+                },
+                {
+                    "sound_name": "",
+                    "sound_path": "",
+                    "loop": false,
+                    "volume_offset": 0,
+                    "stop_all_sounds": false,
+                    "color": null
+                },
+                {
+                    "sound_name": "",
+                    "sound_path": "",
+                    "loop": false,
+                    "volume_offset": 0,
+                    "stop_all_sounds": false,
+                    "color": null
+                },
+                {
+                    "sound_name": "",
+                    "sound_path": "",
+                    "loop": false,
+                    "volume_offset": 0,
+                    "stop_all_sounds": false,
+                    "color": null
+                },
+                {
+                    "sound_name": "",
+                    "sound_path": "",
+                    "loop": false,
+                    "volume_offset": 0,
+                    "stop_all_sounds": false,
+                    "color": null
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,98 @@
+/* Metro-like Dark Theme */
+QWidget {
+    background-color: #252525;
+    color: #FFFFFF;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 13px;
+}
+
+/* Tab Widget */
+QTabWidget::pane {
+    border: 1px solid #333333;
+    background: #252525;
+}
+
+QTabBar::tab {
+    background: #252525;
+    color: #999999;
+    padding: 8px 20px;
+    font-size: 16px;
+    border: none;
+}
+
+QTabBar::tab:selected {
+    color: #FFFFFF;
+    border-bottom: 2px solid #00AEEF; /* Accent color */
+}
+
+QTabBar::tab:hover:!selected {
+    background: #333333;
+    color: #CCCCCC;
+}
+
+/* Push Button - ToolBar style */
+QToolBar QPushButton {
+    background: transparent;
+    border: none;
+    padding: 5px 10px;
+}
+
+QToolBar QPushButton:hover {
+    background: #333333;
+}
+
+QToolBar QPushButton:pressed {
+    background: #00AEEF;
+}
+
+/* Sound Button */
+QPushButton#SoundButton {
+    background-color: #3B3B3B;
+    border: 2px solid transparent;
+    border-radius: 2px;
+    font-size: 15px;
+    padding: 6px;
+    qproperty-wordWrap: true;
+}
+
+QPushButton#SoundButton:hover {
+    border: 2px solid #555555;
+}
+
+QPushButton#SoundButton:pressed {
+    background-color: #00AEEF;
+}
+
+QPushButton#SoundButton[selected="true"] {
+    border: 2px solid #00AEEF;
+}
+
+/* Dialogs */
+QDialog {
+    background-color: #252525;
+}
+
+QLineEdit {
+    background-color: #333333;
+    border: 1px solid #555555;
+    padding: 5px;
+    color: white;
+}
+
+QLineEdit:focus {
+    border: 1px solid #00AEEF;
+}
+
+QMenu {
+    background-color: #2B2B2B;
+    border: 1px solid #111111;
+}
+
+QMenu::item {
+    padding: 5px 30px 5px 20px;
+}
+
+QMenu::item:selected {
+    background-color: #00AEEF;
+    color: white;
+}
